@@ -223,6 +223,50 @@ canvas { display:block; touch-action:none; }
 .pause-btn-item.danger { color:#e05060; border-color:rgba(224,80,96,.2); }
 .pause-btn-item.danger:hover { background:rgba(224,80,96,.07); border-color:rgba(224,80,96,.5); }
 .pause-hint { color:#333; font-size:9px; letter-spacing:.1em; margin-top:4px; }
+
+/* ── Info overlay ── */
+#info-overlay {
+  position:fixed; inset:0; background:rgba(0,0,0,.92);
+  display:none; align-items:flex-start; justify-content:center;
+  z-index:95; overflow-y:auto; padding:32px 16px;
+}
+#info-overlay.active { display:flex; }
+#info-box {
+  background:#0f0f18; border:1px solid rgba(255,255,255,.1);
+  border-radius:4px; padding:28px 32px; width:660px; max-width:100%;
+}
+#info-box h2 {
+  color:#c8c0ff; font-size:11px; letter-spacing:.25em;
+  text-transform:uppercase; margin-bottom:24px; text-align:center;
+}
+.info-section { margin-bottom:28px; }
+.info-section h3 {
+  color:#888; font-size:9px; letter-spacing:.2em;
+  text-transform:uppercase; margin-bottom:12px;
+  border-bottom:1px solid rgba(255,255,255,.06); padding-bottom:6px;
+}
+.info-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+@media(max-width:560px) { .info-grid { grid-template-columns:1fr; } }
+.info-card {
+  border:1px solid rgba(255,255,255,.07); border-radius:3px;
+  padding:10px 12px; display:flex; gap:10px; align-items:flex-start;
+}
+.info-card .ic-dot {
+  width:10px; height:10px; border-radius:2px; flex-shrink:0; margin-top:3px;
+}
+.info-card .ic-body {}
+.info-card .ic-name { color:#ccc; font-size:11px; letter-spacing:.05em; margin-bottom:3px; }
+.info-card .ic-wave { color:#555; font-size:9px; letter-spacing:.08em; margin-bottom:3px; }
+.info-card .ic-desc { color:#555; font-size:10px; line-height:1.5; }
+.info-card.boss-card { border-color:rgba(255,100,50,.15); }
+.info-card.boss-card .ic-name { color:#ff8060; }
+#info-close {
+  display:block; width:100%; margin-top:4px;
+  background:transparent; border:1px solid rgba(255,255,255,.1); border-radius:2px;
+  color:#666; font-family:inherit; font-size:11px; letter-spacing:.12em;
+  text-transform:uppercase; padding:10px; cursor:pointer; transition:all .15s;
+}
+#info-close:hover { border-color:rgba(255,255,255,.3); color:#aaa; }
 #rotate-prompt {
   display:none;
   position:fixed; inset:0; z-index:999;
@@ -267,8 +311,40 @@ canvas { display:block; touch-action:none; }
     <h2>Paused</h2>
     <button class="pause-btn-item" id="pause-resume">▶ Resume</button>
     <button class="pause-btn-item" id="pause-restart">↺ Restart</button>
+    <button class="pause-btn-item" id="pause-info">ℹ Info</button>
     <button class="pause-btn-item danger" id="pause-menu">⌂ Main Menu</button>
     <span class="pause-hint">ESC or P to toggle</span>
+  </div>
+</div>
+
+<!-- Info overlay -->
+<div id="info-overlay">
+  <div id="info-box">
+    <h2>Game Guide</h2>
+
+    <div class="info-section">
+      <h3>How to Play</h3>
+      <div style="color:#666;font-size:11px;line-height:1.9;letter-spacing:.03em;">
+        Move with <span style="color:#aaa">WASD</span> or the on-screen joystick (mobile). Your character <span style="color:#aaa">auto-fires</span> at the nearest target — focus on surviving and dodging. Kill enemies to collect <span style="color:#6060e0">XP orbs</span>, level up, and choose upgrades. Bosses spawn every 5 waves and drop massive XP on death.
+      </div>
+    </div>
+
+    <div class="info-section">
+      <h3>Enemies</h3>
+      <div class="info-grid" id="enemy-info-grid"></div>
+    </div>
+
+    <div class="info-section">
+      <h3>Bosses</h3>
+      <div class="info-grid" id="boss-info-grid"></div>
+    </div>
+
+    <div class="info-section">
+      <h3>Upgrades</h3>
+      <div class="info-grid" id="upgrade-info-grid"></div>
+    </div>
+
+    <button id="info-close">← Back to Pause</button>
   </div>
 </div>
 
@@ -1449,6 +1525,86 @@ document.getElementById('pause-btn').addEventListener('click', () => {
 document.getElementById('pause-resume').addEventListener('click', resumeGame);
 document.getElementById('pause-restart').addEventListener('click', restartGame);
 document.getElementById('pause-menu').addEventListener('click', goMainMenu);
+
+// ── Info overlay ──────────────────────────────────────────────────────────────
+const ENEMY_INFO = [
+  { color:'#cc3344', name:'Runner',      wave:1,  desc:'Basic chaser. Fast, dies quickly. The bread and butter of early waves.' },
+  { color:'#994400', name:'Tank',        wave:4,  desc:'Slow hexagon with massive HP. Takes many hits — prioritise or go around.' },
+  { color:'#ffaa00', name:'Speeder',     wave:6,  desc:'Tiny triangle, extremely fast. Low HP — catch it in your fire arc early.' },
+  { color:'#cc8800', name:'Splitter',    wave:9,  desc:'Splits into 2 fast runners on death. Don\'t let them pile up before killing.' },
+  { color:'#6644cc', name:'Phantom',     wave:12, desc:'Fades in and out of visibility. Lunges at you when close. Stay mobile.' },
+  { color:'#ff4400', name:'Brute',       wave:16, desc:'Giant slow enemy. Emits a damaging shockwave ring when it dies. Back off.' },
+  { color:'#44ffaa', name:'Swarm',       wave:20, desc:'Spawns in packs of 5 small fast triangles. Chaotic — use AoE or Spread Shot.' },
+  { color:'#bb00ff', name:'Necromancer', wave:25, desc:'Periodically spawns new runners near itself. Kill it first to stop the flow.' },
+  { color:'#ff2222', name:'Juggernaut',  wave:30, desc:'Armored giant, immune to pierce upgrades. Slow but deals enormous contact damage.' },
+];
+
+const BOSS_INFO = [
+  { color:'#ff4422', name:'The Crusher',    desc:'Winds up then charges at full speed. Watch for the red ring — dodge sideways.' },
+  { color:'#cc44ff', name:'The Swarm Lord', desc:'Slow but periodically vomits 3 minions. Kill the minions or get overwhelmed.' },
+  { color:'#40ffcc', name:'The Specter',    desc:'Teleports right next to you every few seconds. Keep moving and never stop.' },
+  { color:'#ff8800', name:'The Behemoth',   desc:'Enormous. Emits shockwave blasts — stay outside 200px range when it pulses.' },
+  { color:'#aa00ff', name:'The Reaper',     desc:'Fires 3-way spreads of pink bullets. Weave between the shots while closing in.' },
+  { color:'#00ffff', name:'The Void',       desc:'Surrounded by deadly orbiting satellites. Thread the gap or stay at range.' },
+];
+
+const UPGRADE_INFO = [
+  { icon:'⚡', name:'Overdrive',   desc:'+25% movement speed. Stacks multiplicatively.' },
+  { icon:'🔥', name:'Rapid Fire',  desc:'Shoot 30% faster each time. Excellent stacking.' },
+  { icon:'💥', name:'Power Shot',  desc:'+2 bullet damage. Strong early, scales well.' },
+  { icon:'🔷', name:'Pierce',      desc:'Bullets pass through 1 extra enemy. Great for crowds.' },
+  { icon:'❤️', name:'Vitality',    desc:'+30 max HP and restore 30 HP. Lifesaver mid-run.' },
+  { icon:'🌀', name:'Spread Shot', desc:'Fire 3 bullets at once. Doubles to 5, 7 with stacking.' },
+  { icon:'🧲', name:'Magnetism',   desc:'XP orbs pulled from further away. More XP = faster levels.' },
+  { icon:'💣', name:'Burst Shot',  desc:'Bullets explode on hit with AoE splash damage.' },
+];
+
+function buildInfoGrids() {
+  const eg = document.getElementById('enemy-info-grid');
+  eg.innerHTML = ENEMY_INFO.map(e => `
+    <div class="info-card">
+      <div class="ic-dot" style="background:${e.color}"></div>
+      <div class="ic-body">
+        <div class="ic-name">${e.name}</div>
+        <div class="ic-wave">Unlocks wave ${e.wave}</div>
+        <div class="ic-desc">${e.desc}</div>
+      </div>
+    </div>`).join('');
+
+  const bg = document.getElementById('boss-info-grid');
+  bg.innerHTML = BOSS_INFO.map(b => `
+    <div class="info-card boss-card">
+      <div class="ic-dot" style="background:${b.color};border-radius:50%"></div>
+      <div class="ic-body">
+        <div class="ic-name">${b.name}</div>
+        <div class="ic-desc">${b.desc}</div>
+      </div>
+    </div>`).join('');
+
+  const ug = document.getElementById('upgrade-info-grid');
+  ug.innerHTML = UPGRADE_INFO.map(u => `
+    <div class="info-card">
+      <div style="font-size:16px;flex-shrink:0;margin-top:1px">${u.icon}</div>
+      <div class="ic-body">
+        <div class="ic-name">${u.name}</div>
+        <div class="ic-desc">${u.desc}</div>
+      </div>
+    </div>`).join('');
+}
+buildInfoGrids();
+
+function showInfo() {
+  document.getElementById('pause-overlay').classList.remove('active');
+  document.getElementById('info-overlay').classList.add('active');
+  document.getElementById('info-overlay').scrollTop = 0;
+}
+function hideInfo() {
+  document.getElementById('info-overlay').classList.remove('active');
+  document.getElementById('pause-overlay').classList.add('active');
+}
+
+document.getElementById('pause-info').addEventListener('click', showInfo);
+document.getElementById('info-close').addEventListener('click', hideInfo);
 
 // ESC or P key to toggle pause
 window.addEventListener('keydown', e => {
